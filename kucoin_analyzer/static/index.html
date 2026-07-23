@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KuCoin Futures Analyzer</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #1a2130; --panel2: #222b3d; --text: #e6ebf5;
+    --muted: #8b98b0; --border: #2c3852; --accent: #3ba55d; --accent2: #4a8cff;
+    --long: #3ba55d; --short: #e05260; --warn: #d9a441;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f6fb; --panel: #ffffff; --panel2: #eef2f9; --text: #1a2130;
+      --muted: #5a6478; --border: #d7deea; --accent: #2e8b52; --accent2: #2b6fe0;
+      --long: #2e8b52; --short: #cc3a48; --warn: #b5842b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    line-height: 1.45;
+  }
+  header { padding: 20px 24px 8px; }
+  h1 { margin: 0; font-size: 22px; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .wrap { padding: 0 24px 40px; max-width: 1200px; margin: 0 auto; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-top: 16px;
+  }
+  form { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input, select {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 9px; font-size: 14px; min-width: 90px;
+  }
+  .weights input { width: 62px; min-width: 0; }
+  .weights { display: flex; gap: 8px; }
+  .weights .field label { font-size: 11px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .chk { flex-direction: row; align-items: center; gap: 6px; }
+  #status { margin-top: 12px; font-size: 14px; color: var(--muted); min-height: 20px; }
+  .err { color: var(--short) !important; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); text-align: right; }
+  th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th:first-child, td:first-child { text-align: center; }
+  tbody tr:hover { background: var(--panel2); }
+  td:nth-child(2) { font-weight: 600; }
+  .pos { color: var(--long); }
+  .neg { color: var(--short); }
+  .scorecell { position: relative; min-width: 120px; }
+  .scorebar {
+    position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    opacity: .25; z-index: 0;
+  }
+  .scorecell span { position: relative; z-index: 1; }
+  .bias { text-align: left; }
+  .bias.long { color: var(--long); }
+  .bias.short { color: var(--short); }
+  .bias.warn { color: var(--warn); }
+  .chart { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .barrow { display: grid; grid-template-columns: 110px 1fr 48px; align-items: center; gap: 10px; font-size: 12px; }
+  .bar { height: 16px; border-radius: 4px; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+  .disclaimer {
+    margin-top: 18px; font-size: 12px; color: var(--muted);
+    border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel2);
+    border-radius: 0 8px 8px 0;
+  }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>KuCoin Futures Analyzer</h1>
+  <div class="sub">Ranking par perpetual wg zmienności, momentum, płynności i funding rate</div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <form id="form">
+      <div class="field">
+        <label for="top">Ile par (TOP)</label>
+        <input type="number" id="top" value="15" min="1" max="200">
+      </div>
+      <div class="field">
+        <label for="interval">Świece (min)</label>
+        <select id="interval">
+          <option value="5">5</option>
+          <option value="15">15</option>
+          <option value="30">30</option>
+          <option value="60" selected>60</option>
+          <option value="240">240</option>
+          <option value="1440">1440</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="candidates">Kandydaci</label>
+        <input type="number" id="candidates" value="60" min="0" max="500">
+      </div>
+      <div class="field chk">
+        <input type="checkbox" id="noklines">
+        <label for="noklines">Bez świec (szybciej)</label>
+      </div>
+      <div class="field">
+        <label>Wagi (vol / mom / liq / fund)</label>
+        <div class="weights">
+          <div class="field"><input type="number" id="w_vol" value="0.30" step="0.05" min="0"></div>
+          <div class="field"><input type="number" id="w_mom" value="0.30" step="0.05" min="0"></div>
+          <div class="field"><input type="number" id="w_liq" value="0.25" step="0.05" min="0"></div>
+          <div class="field"><input type="number" id="w_fund" value="0.15" step="0.05" min="0"></div>
+        </div>
+      </div>
+      <button type="submit" id="go">Analizuj</button>
+    </form>
+    <div id="status">Kliknij „Analizuj", aby pobrać aktualne notowania z KuCoin.</div>
+  </div>
+
+  <div class="card" id="chartcard" style="display:none">
+    <h2>Ocena potencjału — TOP</h2>
+    <div class="chart" id="chart"></div>
+  </div>
+
+  <div class="card" id="tablecard" style="display:none">
+    <div class="tablewrap">
+      <table id="table">
+        <thead>
+          <tr>
+            <th>#</th><th>Symbol</th><th>Cena</th><th>24h%</th><th>Zmien.%</th>
+            <th>RSI</th><th>Obrót 24h</th><th>Fund.%</th><th>Ocena</th><th>Sygnał</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="disclaimer">
+      <strong>Uwaga:</strong> Ranking to sygnał wspierający decyzję, a <strong>nie</strong>
+      prognoza cen ani porada inwestycyjna. Handel kontraktami futures z dźwignią jest
+      bardzo ryzykowny — możesz stracić cały kapitał.
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function fmtTurnover(v) {
+  if (v >= 1e9) return (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return (v/1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return (v/1e3).toFixed(2) + 'K';
+  return v.toFixed(0);
+}
+function fmt(v, d=2, dash='—') { return (v===null||v===undefined) ? dash : Number(v).toFixed(d); }
+
+function biasClass(b) {
+  if (!b) return '';
+  if (b.startsWith('LONG')) return b.includes('⚠') ? 'warn' : 'long';
+  if (b.startsWith('SHORT')) return b.includes('⚠') ? 'warn' : 'short';
+  return '';
+}
+
+function buildQuery() {
+  const p = new URLSearchParams();
+  p.set('top', $('top').value || '15');
+  p.set('interval', $('interval').value);
+  p.set('candidates', $('candidates').value || '60');
+  if ($('noklines').checked) p.set('no_klines', '1');
+  const w = [
+    'volatility=' + ($('w_vol').value || '0'),
+    'momentum='   + ($('w_mom').value || '0'),
+    'liquidity='  + ($('w_liq').value || '0'),
+    'funding='    + ($('w_fund').value || '0'),
+  ].join(',');
+  p.set('weights', w);
+  return p.toString();
+}
+
+function renderChart(rows) {
+  const chart = $('chart');
+  chart.innerHTML = '';
+  const max = Math.max(1, ...rows.map(r => r.score));
+  rows.slice(0, 12).forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'barrow';
+    const pct = (r.score / max) * 100;
+    row.innerHTML =
+      `<div>${r.symbol}</div>` +
+      `<div class="bar" style="width:${pct}%"></div>` +
+      `<div style="text-align:right">${r.score.toFixed(1)}</div>`;
+    chart.appendChild(row);
+  });
+}
+
+function renderTable(rows) {
+  const tb = $('table').querySelector('tbody');
+  tb.innerHTML = '';
+  const maxScore = Math.max(1, ...rows.map(r => r.score));
+  rows.forEach(r => {
+    const chg = r.change_24h_pct;
+    const fund = r.funding_rate_pct;
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td>${r.rank}</td>` +
+      `<td>${r.symbol}</td>` +
+      `<td>${fmt(r.price, r.price < 1 ? 5 : 2)}</td>` +
+      `<td class="${chg>=0?'pos':'neg'}">${chg>=0?'+':''}${fmt(chg)}</td>` +
+      `<td>${fmt(r.volatility_pct)}</td>` +
+      `<td>${fmt(r.rsi, 1)}</td>` +
+      `<td>${fmtTurnover(r.turnover_24h)}</td>` +
+      `<td class="${fund>=0?'pos':'neg'}">${fund>=0?'+':''}${fmt(fund,4)}</td>` +
+      `<td class="scorecell"><div class="scorebar" style="width:${(r.score/maxScore)*100}%"></div>` +
+        `<span>${r.score.toFixed(1)}</span></td>` +
+      `<td class="bias ${biasClass(r.bias)}">${r.bias}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('go');
+  btn.disabled = true;
+  $('status').className = '';
+  $('status').textContent = 'Pobieram notowania z KuCoin i liczę wskaźniki… (świece mogą chwilę potrwać)';
+  try {
+    const res = await fetch('/api/ranking?' + buildQuery());
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const rows = data.results || [];
+    if (!rows.length) {
+      $('status').textContent = 'Brak wyników dla podanych parametrów.';
+    } else {
+      renderChart(rows);
+      renderTable(rows);
+      $('chartcard').style.display = '';
+      $('tablecard').style.display = '';
+      $('status').textContent = `Gotowe — ${rows.length} par (waluta ${data.quote}).`;
+    }
+  } catch (err) {
+    $('status').className = 'err';
+    $('status').textContent = 'Błąd: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

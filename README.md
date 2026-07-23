@@ -83,6 +83,27 @@ python -m kucoin_analyzer --help
 | `--weights` | patrz niżej | Wagi kryteriów |
 | `--json` | — | Wynik w formacie JSON |
 
+## Wersja webowa
+
+Oprócz CLI dostępny jest prosty interfejs w przeglądarce (również **bez
+zależności zewnętrznych** — serwer oparty na `http.server`, wykresy rysowane
+bez żadnych bibliotek/CDN).
+
+```bash
+python -m kucoin_analyzer.web
+# domyślnie: http://127.0.0.1:8000
+
+# własny host/port:
+python -m kucoin_analyzer.web --host 0.0.0.0 --port 8080
+```
+
+Otwórz podany adres w przeglądarce, ustaw parametry (liczba par, interwał
+świec, wagi kryteriów) i kliknij **„Analizuj"**. Zobaczysz wykres słupkowy
+ocen oraz pełną tabelę rankingu z paskami oceny i sygnałem kierunku.
+
+Strona odpytuje lokalny endpoint `GET /api/ranking` (ten sam silnik analizy
+co CLI), więc działa tam, gdzie masz dostęp do API KuCoin.
+
 ## Jak liczona jest ocena
 
 1. Dla każdej pary zbierane są surowe metryki (zmienność, momentum, obrót,
@@ -132,14 +153,17 @@ kucoin_analyzer/
 ├── indicators.py   # wskaźniki: RSI, ATR%
 ├── scoring.py      # normalizacja, wagi, ranking
 ├── analyzer.py     # orkiestracja pobrania danych i analizy
-└── cli.py          # interfejs wiersza poleceń + tabela
+├── cli.py          # interfejs wiersza poleceń + tabela
+├── web.py          # serwer webowy (http.server) + endpoint /api/ranking
+└── static/
+    └── index.html  # strona z tabelą i wykresem (bez zależności/CDN)
 tests/
 └── test_analyzer.py
 ```
 
 ## Pomysły na rozbudowę
 
-- Wersja webowa (wykresy, odświeżanie na żywo)
+- Automatyczne odświeżanie wersji webowej na żywo
 - Dodatkowe wskaźniki (MACD, Bollinger Bands, open interest, wolumen kierunkowy)
 - Alerty (np. gdy ocena pary przekroczy próg)
 - Backtesting reguł na danych historycznych

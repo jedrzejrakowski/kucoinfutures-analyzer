@@ -144,6 +144,50 @@ def test_build_metrics_handles_missing_fields():
     assert m.volatility is None  # brak high/low
 
 
+# --- warstwa webowa (bez sieci) ---------------------------------------------
+
+def test_web_compute_ranking_parses_params_and_shapes_output():
+    from kucoin_analyzer import web
+
+    captured = {}
+
+    def fake_analyze(**kwargs):
+        captured.update(kwargs)
+        return [
+            PairMetrics(symbol="XBTUSDTM", price=50000.0, change_24h_pct=2.5,
+                        turnover_24h=1e9, funding_rate=0.0001, volatility=1.5,
+                        rsi=60.0),
+            PairMetrics(symbol="ETHUSDTM", price=3000.0, change_24h_pct=-1.0,
+                        turnover_24h=5e8, funding_rate=-0.0002, volatility=2.0,
+                        rsi=45.0),
+        ]
+
+    orig = web.analyze
+    web.analyze = fake_analyze
+    try:
+        out = web.compute_ranking(
+            "top=2&interval=15&candidates=30&no_klines=1"
+            "&weights=volatility=0.5,momentum=0.5,liquidity=0,funding=0"
+        )
+    finally:
+        web.analyze = orig
+
+    # Parametry z query poprawnie zmapowane na wywołanie analyze():
+    assert captured["granularity"] == 15
+    assert captured["candidates"] == 30
+    assert captured["use_klines"] is False
+    assert captured["weights"]["volatility"] == 0.5
+    assert captured["weights"]["liquidity"] == 0.0
+
+    # Kształt odpowiedzi:
+    assert out["quote"] == "USDT"
+    assert len(out["results"]) == 2
+    first = out["results"][0]
+    assert first["rank"] == 1
+    assert first["symbol"] == "XBTUSDTM"
+    assert "score_breakdown" in first
+
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
