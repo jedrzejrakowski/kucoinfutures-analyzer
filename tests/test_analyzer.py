@@ -13,6 +13,7 @@ from kucoin_analyzer import indicators  # noqa: E402
 from kucoin_analyzer.analyzer import build_metrics_from_contract  # noqa: E402
 from kucoin_analyzer.scoring import (  # noqa: E402
     PairMetrics,
+    _infer_bias,
     _percentile_ranks,
     rank_pairs,
 )
@@ -63,6 +64,86 @@ def test_atr_pct_positive_and_scales_with_range():
 def test_price_change_pct():
     candles = _candles_from_closes([100.0, 110.0])
     assert math.isclose(indicators.price_change_pct(candles), 10.0, rel_tol=1e-6)
+
+
+# --- MACD / Bollinger / EMA -------------------------------------------------
+
+def test_ema_series_length_and_seed():
+    vals = [float(x) for x in range(1, 11)]
+    ema = indicators.ema_series(vals, 3)
+    assert len(ema) == len(vals)
+    assert ema[0] is None and ema[1] is None
+    # zalążek = SMA(1,2,3) = 2.0
+    assert math.isclose(ema[2], 2.0)
+
+
+def test_ema_insufficient_data():
+    assert indicators.ema_series([1.0, 2.0], 5) == [None, None]
+
+
+def test_macd_line_sign_follows_trend():
+    up = [100 + i * 1.5 for i in range(60)]
+    down = [100 - i * 1.5 for i in range(60)]
+    m_up = indicators.macd([[i, c, c, c, c, 1] for i, c in enumerate(up)])
+    m_dn = indicators.macd([[i, c, c, c, c, 1] for i, c in enumerate(down)])
+    assert m_up is not None and m_dn is not None
+    assert m_up["macd"] > 0   # fast EMA nad slow EMA -> trend wzrostowy
+    assert m_dn["macd"] < 0
+
+
+def test_macd_histogram_sign_on_acceleration():
+    # Przyspieszający ruch -> histogram (MACD - sygnał) niezerowy i zgodny z kierunkiem.
+    up_acc = [100 + (i ** 1.8) * 0.05 for i in range(60)]
+    dn_acc = [100 - (i ** 1.8) * 0.05 for i in range(60)]
+    m_up = indicators.macd([[i, c, c, c, c, 1] for i, c in enumerate(up_acc)])
+    m_dn = indicators.macd([[i, c, c, c, c, 1] for i, c in enumerate(dn_acc)])
+    assert m_up["hist"] > 0
+    assert m_dn["hist"] < 0
+
+
+def test_macd_insufficient_data_returns_none():
+    closes = [100.0] * 10
+    assert indicators.macd([[i, c, c, c, c, 1] for i, c in enumerate(closes)]) is None
+
+
+def test_bollinger_percent_b_and_bandwidth():
+    closes = [10.0] * 19 + [12.0]  # ostatnia świeca wybija w górę
+    bb = indicators.bollinger([[i, c, c, c, c, 1] for i, c in enumerate(closes)],
+                              period=20)
+    assert bb is not None
+    assert bb["upper"] > bb["middle"] > bb["lower"]
+    assert bb["percent_b"] > 0.5      # cena w górnej części wstęg
+    assert bb["bandwidth_pct"] > 0
+
+
+def test_bollinger_insufficient_data():
+    closes = [10.0] * 5
+    assert indicators.bollinger([[i, c, c, c, c, 1] for i, c in enumerate(closes)],
+                                period=20) is None
+
+
+# --- sygnał kierunku (bias) -------------------------------------------------
+
+def test_bias_overbought_flags_warning():
+    m = PairMetrics(symbol="X", rsi=75.0, change_24h_pct=5.0, macd_hist=1.0)
+    assert "wykupienie" in _infer_bias(m)
+
+
+def test_bias_oversold_flags_warning():
+    m = PairMetrics(symbol="X", bb_percent_b=-0.1, rsi=25.0, change_24h_pct=-5.0)
+    assert "wyprzedanie" in _infer_bias(m)
+
+
+def test_bias_macd_drives_long():
+    m = PairMetrics(symbol="X", rsi=58.0, change_24h_pct=2.0, macd_hist=0.5,
+                    bb_percent_b=0.7)
+    assert _infer_bias(m) == "LONG"
+
+
+def test_bias_macd_drives_short():
+    m = PairMetrics(symbol="X", rsi=42.0, change_24h_pct=-2.0, macd_hist=-0.5,
+                    bb_percent_b=0.3)
+    assert _infer_bias(m) == "SHORT"
 
 
 # --- ranking / percentyle ---------------------------------------------------

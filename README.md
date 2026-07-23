@@ -101,6 +101,12 @@ Otwórz podany adres w przeglądarce, ustaw parametry (liczba par, interwał
 świec, wagi kryteriów) i kliknij **„Analizuj"**. Zobaczysz wykres słupkowy
 ocen oraz pełną tabelę rankingu z paskami oceny i sygnałem kierunku.
 
+**Auto-odświeżanie na żywo:** zaznacz „Auto-odświeżanie na żywo" i wybierz
+interwał (15 s / 30 s / 60 s / 2 min). Ranking i wykres będą odświeżane
+automatycznie, z widocznym znacznikiem „NA ŻYWO" i czasem ostatniej
+aktualizacji. Nakładające się zapytania są pomijane, więc wolniejsze
+odświeżenie (np. z analizą świec) nie zaburzy działania.
+
 Strona odpytuje lokalny endpoint `GET /api/ranking` (ten sam silnik analizy
 co CLI), więc działa tam, gdzie masz dostęp do API KuCoin.
 
@@ -111,6 +117,12 @@ co CLI), więc działa tam, gdzie masz dostęp do API KuCoin.
 2. Każda metryka jest **normalizowana do 0–1 metodą rangi percentylowej** w
    obrębie całego badanego zbioru par (odporne na wartości odstające).
 3. Znormalizowane oceny łączone są w **ważoną sumę** i skalowane do 0–100.
+
+Dodatkowo **MACD** i **Bollinger Bands** (%B) nie wchodzą wprost do wagi oceny,
+ale **udokładniają sygnał kierunku** (LONG/SHORT): MACD potwierdza trend
+(histogram byczy/niedźwiedzi), a %B wyłapuje skrajności (wykupienie przy górnej
+wstędze, wyprzedanie przy dolnej). Kierunek to heurystyka głosowania kilku
+wskaźników — nie prognoza.
 
 Domyślne wagi:
 
@@ -128,6 +140,8 @@ Kolumny w tabeli wyników:
 | `24h%` | Zmiana ceny w ciągu 24h |
 | `Zmien.%` | Zmienność: ATR% (ze świec) lub zakres 24h |
 | `RSI` | Relative Strength Index (>70 wykupienie, <30 wyprzedanie) |
+| `MACD` | Histogram MACD: ▲ momentum byczy (>0), ▼ niedźwiedzi (<0) |
+| `%B` | Pozycja w Bollingerze: 0% = dolna wstęga, 100% = górna (>100% wybicie/wykupienie, <0% wyprzedanie) |
 | `Obrót24h` | Obrót w ciągu 24h (płynność) |
 | `Fund.%` | Funding rate w procentach (znak = kierunek) |
 | `Ocena` | Łączna ocena potencjału 0–100 |
@@ -163,8 +177,7 @@ tests/
 
 ## Pomysły na rozbudowę
 
-- Automatyczne odświeżanie wersji webowej na żywo
-- Dodatkowe wskaźniki (MACD, Bollinger Bands, open interest, wolumen kierunkowy)
+- Kolejne wskaźniki (open interest, wolumen kierunkowy, VWAP)
 - Alerty (np. gdy ocena pary przekroczy próg)
 - Backtesting reguł na danych historycznych
 - Eksport do CSV / arkusza

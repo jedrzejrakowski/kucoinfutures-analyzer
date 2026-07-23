@@ -48,6 +48,13 @@
   }
   button:disabled { opacity: .5; cursor: default; }
   .chk { flex-direction: row; align-items: center; gap: 6px; }
+  .autobar { display: flex; align-items: center; gap: 14px; margin-top: 14px;
+    flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+  .autobar select { padding: 5px 8px; min-width: 0; }
+  .muted { color: var(--muted); }
+  .livedot { color: var(--long); font-weight: 700; font-size: 12px; letter-spacing: .5px;
+    animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   #status { margin-top: 12px; font-size: 14px; color: var(--muted); min-height: 20px; }
   .err { color: var(--short) !important; }
   .tablewrap { overflow-x: auto; }
@@ -125,6 +132,17 @@
       </div>
       <button type="submit" id="go">Analizuj</button>
     </form>
+    <div class="autobar">
+      <label class="chk"><input type="checkbox" id="autorefresh"> Auto-odświeżanie na żywo</label>
+      <select id="refresh_sec" title="Co ile sekund odświeżać">
+        <option value="15">co 15 s</option>
+        <option value="30" selected>co 30 s</option>
+        <option value="60">co 60 s</option>
+        <option value="120">co 2 min</option>
+      </select>
+      <span id="live" class="livedot" style="display:none">● NA ŻYWO</span>
+      <span id="lastupdate" class="muted"></span>
+    </div>
     <div id="status">Kliknij „Analizuj", aby pobrać aktualne notowania z KuCoin.</div>
   </div>
 
@@ -139,7 +157,8 @@
         <thead>
           <tr>
             <th>#</th><th>Symbol</th><th>Cena</th><th>24h%</th><th>Zmien.%</th>
-            <th>RSI</th><th>Obrót 24h</th><th>Fund.%</th><th>Ocena</th><th>Sygnał</th>
+            <th>RSI</th><th>MACD</th><th>%B</th><th>Obrót 24h</th><th>Fund.%</th>
+            <th>Ocena</th><th>Sygnał</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -169,6 +188,17 @@ function biasClass(b) {
   if (b.startsWith('LONG')) return b.includes('⚠') ? 'warn' : 'long';
   if (b.startsWith('SHORT')) return b.includes('⚠') ? 'warn' : 'short';
   return '';
+}
+
+function macdCell(h) {
+  if (h === null || h === undefined) return '—';
+  return h > 0 ? '<span class="pos">▲</span>' : '<span class="neg">▼</span>';
+}
+
+function pbCell(pb) {
+  if (pb === null || pb === undefined) return '—';
+  const cls = pb >= 1 ? 'neg' : (pb <= 0 ? 'pos' : '');
+  return `<span class="${cls}">${(pb*100).toFixed(0)}%</span>`;
 }
 
 function buildQuery() {
@@ -218,6 +248,8 @@ function renderTable(rows) {
       `<td class="${chg>=0?'pos':'neg'}">${chg>=0?'+':''}${fmt(chg)}</td>` +
       `<td>${fmt(r.volatility_pct)}</td>` +
       `<td>${fmt(r.rsi, 1)}</td>` +
+      `<td>${macdCell(r.macd_hist)}</td>` +
+      `<td>${pbCell(r.bb_percent_b)}</td>` +
       `<td>${fmtTurnover(r.turnover_24h)}</td>` +
       `<td class="${fund>=0?'pos':'neg'}">${fund>=0?'+':''}${fmt(fund,4)}</td>` +
       `<td class="scorecell"><div class="scorebar" style="width:${(r.score/maxScore)*100}%"></div>` +
@@ -227,12 +259,18 @@ function renderTable(rows) {
   });
 }
 
-$('form').addEventListener('submit', async (e) => {
-  e.preventDefault();
+let inFlight = false;      // blokada przed nakładaniem się zapytań
+let refreshTimer = null;
+
+async function runAnalysis(auto = false) {
+  if (inFlight) return;    // pomiń, jeśli poprzednie jeszcze trwa
+  inFlight = true;
   const btn = $('go');
   btn.disabled = true;
   $('status').className = '';
-  $('status').textContent = 'Pobieram notowania z KuCoin i liczę wskaźniki… (świece mogą chwilę potrwać)';
+  $('status').textContent = auto
+    ? 'Odświeżam dane…'
+    : 'Pobieram notowania z KuCoin i liczę wskaźniki… (świece mogą chwilę potrwać)';
   try {
     const res = await fetch('/api/ranking?' + buildQuery());
     const data = await res.json();
@@ -245,14 +283,43 @@ $('form').addEventListener('submit', async (e) => {
       renderTable(rows);
       $('chartcard').style.display = '';
       $('tablecard').style.display = '';
+      const t = new Date().toLocaleTimeString('pl-PL');
       $('status').textContent = `Gotowe — ${rows.length} par (waluta ${data.quote}).`;
+      $('lastupdate').textContent = 'Ostatnia aktualizacja: ' + t;
     }
   } catch (err) {
     $('status').className = 'err';
     $('status').textContent = 'Błąd: ' + err.message;
   } finally {
+    inFlight = false;
     btn.disabled = false;
   }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  const sec = parseInt($('refresh_sec').value, 10) || 30;
+  $('live').style.display = '';
+  refreshTimer = setInterval(() => runAnalysis(true), sec * 1000);
+  runAnalysis(true);       // odśwież od razu po włączeniu
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  $('live').style.display = 'none';
+}
+
+$('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  runAnalysis(false);
+});
+
+$('autorefresh').addEventListener('change', (e) => {
+  if (e.target.checked) startAutoRefresh(); else stopAutoRefresh();
+});
+
+$('refresh_sec').addEventListener('change', () => {
+  if ($('autorefresh').checked) startAutoRefresh();  // zastosuj nowy interwał
 });
 </script>
 </body>

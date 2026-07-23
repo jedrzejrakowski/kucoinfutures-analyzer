@@ -81,7 +81,7 @@ def analyze(
         metrics = metrics[:candidates]
 
     if use_klines:
-        log(f"Pobieram świece dla {len(metrics)} par (ATR%, RSI)...")
+        log(f"Pobieram świece dla {len(metrics)} par (ATR%, RSI, MACD, Bollinger)...")
         for i, m in enumerate(metrics, 1):
             try:
                 candles = client.klines(m.symbol, granularity, lookback)
@@ -93,6 +93,13 @@ def analyze(
                     m.volatility = atr  # dokładniejsza miara niż zakres 24h
                 m.rsi = indicators.rsi(candles)
                 m.momentum_change_pct = indicators.price_change_pct(candles)
+                macd = indicators.macd(candles)
+                if macd is not None:
+                    m.macd_hist = macd["hist"]
+                bb = indicators.bollinger(candles)
+                if bb is not None:
+                    m.bb_percent_b = bb["percent_b"]
+                    m.bb_bandwidth_pct = bb["bandwidth_pct"]
             if progress and i % 10 == 0:
                 log(f"  ...{i}/{len(metrics)}")
 

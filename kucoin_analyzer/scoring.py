@@ -39,6 +39,9 @@ class PairMetrics:
     volatility: float | None = None  # ATR% lub zakres 24h w %
     rsi: float | None = None
     momentum_change_pct: float | None = None  # zmiana ceny w oknie klines
+    macd_hist: float | None = None  # histogram MACD (>0 byczy)
+    bb_percent_b: float | None = None  # pozycja w Bollingerze (0=dół,1=góra)
+    bb_bandwidth_pct: float | None = None  # szerokość wstęg (zmienność)
 
     # Wypełniane podczas rankingu:
     scores: dict[str, float] = field(default_factory=dict)
@@ -75,25 +78,51 @@ def _percentile_ranks(values: list[float | None]) -> list[float]:
 
 
 def _infer_bias(m: PairMetrics) -> str:
-    """Prosty sygnał kierunku na podstawie RSI i zmiany 24h.
+    """Sygnał kierunku na podstawie kilku wskaźników (heurystyka, nie prognoza).
 
-    To heurystyka trendowa, nie prognoza. Skrajne RSI oznaczamy jako
-    ryzyko odwrócenia.
+    Łączy trzy warstwy:
+      1. Skrajności (ryzyko odwrócenia): RSI oraz %B Bollingera.
+      2. Potwierdzenie trendu: histogram MACD, zmiana ceny, RSI względem 50.
+      3. Głosowanie: przewaga sygnałów byczych -> LONG, niedźwiedzich -> SHORT.
     """
     rsi = m.rsi
     chg = m.change_24h_pct
+    pb = m.bb_percent_b
+
+    # 1. Skrajności — oznaczamy ostrzeżeniem o możliwym odwróceniu.
+    overbought = (rsi is not None and rsi >= 70) or (pb is not None and pb >= 1.0)
+    oversold = (rsi is not None and rsi <= 30) or (pb is not None and pb <= 0.0)
+    if overbought:
+        return "LONG⚠ (wykupienie)"
+    if oversold:
+        return "SHORT⚠ (wyprzedanie)"
+
+    # 2/3. Głosowanie sygnałów trendowych.
+    bull = 0
+    bear = 0
+    if m.macd_hist is not None:
+        if m.macd_hist > 0:
+            bull += 1
+        elif m.macd_hist < 0:
+            bear += 1
+    if chg > 0.5:
+        bull += 1
+    elif chg < -0.5:
+        bear += 1
     if rsi is not None:
-        if rsi >= 70:
-            return "LONG⚠ (wykupienie)"
-        if rsi <= 30:
-            return "SHORT⚠ (wyprzedanie)"
-        if rsi > 55 and chg > 0:
-            return "LONG"
-        if rsi < 45 and chg < 0:
-            return "SHORT"
-    if chg > 1:
+        if rsi > 55:
+            bull += 1
+        elif rsi < 45:
+            bear += 1
+    if pb is not None:
+        if pb > 0.6:
+            bull += 1
+        elif pb < 0.4:
+            bear += 1
+
+    if bull > bear:
         return "LONG"
-    if chg < -1:
+    if bear > bull:
         return "SHORT"
     return "neutralny"
 

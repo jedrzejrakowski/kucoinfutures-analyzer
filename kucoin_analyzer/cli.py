@@ -32,11 +32,13 @@ def _fmt(v: float | None, suffix: str = "", dash: str = "—") -> str:
 def render_table(pairs: list[PairMetrics], top: int) -> str:
     rows = pairs[:top]
     headers = [
-        "#", "Symbol", "Cena", "24h%", "Zmien.%", "RSI",
+        "#", "Symbol", "Cena", "24h%", "Zmien.%", "RSI", "MACD", "%B",
         "Obrót24h", "Fund.%", "Ocena", "Sygnał",
     ]
     table: list[list[str]] = []
     for i, m in enumerate(rows, 1):
+        macd = "—" if m.macd_hist is None else ("▲" if m.macd_hist > 0 else "▼")
+        pb = "—" if m.bb_percent_b is None else f"{m.bb_percent_b * 100:.0f}%"
         table.append([
             str(i),
             m.symbol,
@@ -44,6 +46,8 @@ def render_table(pairs: list[PairMetrics], top: int) -> str:
             f"{m.change_24h_pct:+.2f}",
             _fmt(m.volatility),
             _fmt(m.rsi, dash="—"),
+            macd,
+            pb,
             _fmt_turnover(m.turnover_24h),
             f"{m.funding_rate * 100:+.4f}",
             f"{m.total_score:.1f}",
@@ -150,6 +154,9 @@ def main(argv: list[str] | None = None) -> int:
                 "change_24h_pct": round(m.change_24h_pct, 4),
                 "volatility_pct": m.volatility,
                 "rsi": m.rsi,
+                "macd_hist": m.macd_hist,
+                "bb_percent_b": m.bb_percent_b,
+                "bb_bandwidth_pct": m.bb_bandwidth_pct,
                 "turnover_24h": m.turnover_24h,
                 "funding_rate_pct": round(m.funding_rate * 100, 6),
                 "score": m.total_score,
