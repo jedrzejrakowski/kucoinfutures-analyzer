@@ -1,0 +1,6 @@
+# Rdzeń programu działa WYŁĄCZNIE na bibliotece standardowej Pythona (3.9+).
+# Brak wymaganych zależności zewnętrznych.
+#
+# Opcjonalnie, do uruchomienia testów przez pytest (można też bez niego —
+# patrz README), zainstaluj:
+#   pytest>=7.0
